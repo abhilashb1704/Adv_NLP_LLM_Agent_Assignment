@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Research Agent — Pipeline Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,700;1,9..144,400&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0d0e0f;
+    --surface: #141518;
+    --surface2: #1c1e22;
+    --border: #2a2d34;
+    --accent: #e8c96d;
+    --accent2: #6dc8e8;
+    --accent3: #e86d8a;
+    --text: #e8e6e0;
+    --muted: #7a7870;
+    --tool: #6de8b4;
+    --step-w: 280px;
+    --conn-h: 48px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: .5;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 60px 32px 100px; }
+
+  /* Header */
+  header { margin-bottom: 72px; }
+  .label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(32px, 5vw, 56px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -.02em;
+    color: var(--text);
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .subtitle { margin-top: 16px; color: var(--muted); font-size: 13px; max-width: 520px; line-height: 1.7; }
+
+  /* Pipeline layout */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* Connector arrow */
+  .connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: var(--conn-h);
+    position: relative;
+  }
+  .connector-line {
+    width: 2px;
+    flex: 1;
+    background: linear-gradient(to bottom, var(--border), var(--border));
+    position: relative;
+  }
+  .connector-line::after {
+    content: '';
+    position: absolute;
+    bottom: -6px; left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--border);
+  }
+  .connector-label {
+    position: absolute;
+    right: calc(50% + 16px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: .06em;
+    white-space: nowrap;
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  /* Step card */
+  .step-card {
+    width: var(--step-w);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .2s, transform .15s, box-shadow .2s;
+    opacity: 0;
+    animation: fadeSlide .5s forwards;
+  }
+  .step-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(232,201,109,.08);
+  }
+  .step-card.tool-step {
+    border-color: rgba(109,232,180,.25);
+  }
+  .step-card.tool-step:hover { border-color: var(--tool); }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .step-card.tool-step .step-num { border-color: var(--tool); color: var(--tool); }
+  .step-type-badge {
+    font-size: 9px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: rgba(232,201,109,.12);
+    color: var(--accent);
+    margin-left: auto;
+  }
+  .step-card.tool-step .step-type-badge {
+    background: rgba(109,232,180,.12);
+    color: var(--tool);
+  }
+  .step-name {
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .step-body { padding: 14px 18px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  .io-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 11px;
+  }
+  .io-chip {
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--surface2);
+  }
+  .io-chip.in { border-color: rgba(109,200,232,.2); color: var(--accent2); }
+  .io-chip.out { border-color: rgba(232,201,109,.2); color: var(--accent); }
+
+  /* Expand panel */
+  .expand-panel {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .4s ease;
+    border-top: 0 solid var(--border);
+  }
+  .step-card.expanded .expand-panel {
+    max-height: 600px;
+    border-top-width: 1px;
+  }
+  .expand-inner { padding: 16px 18px; }
+  .prompt-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .prompt-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #b0ada5;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .rationale { margin-top: 12px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .rationale strong { color: var(--text); }
+
+  /* State flow panel */
+  .state-panel {
+    margin-top: 64px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+    opacity: 0;
+    animation: fadeSlide .5s .8s forwards;
+  }
+  .state-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .state-header h2 { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; }
+  .state-body { padding: 24px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .state-key {
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .state-key .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .state-key.written .dot { background: var(--accent); }
+  .state-key.read .dot { background: var(--accent2); }
+  .state-key.both .dot { background: var(--tool); }
+  .state-key .key-name { color: var(--text); font-weight: 500; }
+  .state-key .key-type { color: var(--muted); font-size: 10px; }
+
+  /* Legend */
+  .legend { margin-top: 48px; display: flex; gap: 24px; flex-wrap: wrap; font-size: 11px; color: var(--muted); opacity: 0; animation: fadeSlide .5s 1s forwards; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* stagger step cards */
+  .step-card:nth-child(1) { animation-delay: .05s; }
+  .step-card:nth-child(2) { animation-delay: .15s; }
+  .step-card:nth-child(3) { animation-delay: .25s; }
+  .step-card:nth-child(4) { animation-delay: .35s; }
+  .step-card:nth-child(5) { animation-delay: .45s; }
+  .step-card:nth-child(6) { animation-delay: .55s; }
+
+  /* footer */
+  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; opacity: 0; animation: fadeSlide .5s 1.2s forwards; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <p class="label">Multi-Step LLM Agent · Grok API</p>
+    <h1>Research <em>Report</em><br>Generator</h1>
+    <p class="subtitle">A six-step pipeline that turns any research topic into a polished Markdown report. Each step's output becomes the next step's input — no step can be removed without breaking the chain.</p>
+  </header>
+
+  <div class="pipeline" id="pipeline">
+
+    <!-- Step 1 -->
+    <div class="step-card" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div class="step-name">Decompose</div>
+        <div class="step-type-badge">LLM</div>
+      </div>
+      <div class="step-body">
+        Breaks the raw topic string into 3–4 focused, searchable sub-questions.
+        <div class="io-row">
+          <div class="io-chip in">← topic: str</div>
+          <div class="io-chip out">→ sub_questions[]</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">System Prompt</div>
+          <div class="prompt-box">You are a senior research editor.
+Your job is to decompose a broad research topic into 3–4 focused, searchable sub-questions.
+Each sub-question must be specific enough that a web search would return useful results.
+Respond ONLY with a JSON object — no preamble, no markdown fences:
+{
+  "topic": "&lt;the original topic&gt;",
+  "sub_questions": ["&lt;q1&gt;", "&lt;q2&gt;", "&lt;q3&gt;"]
+}</div>
+          <div class="rationale"><strong>Why:</strong> The JSON-only constraint makes parsing reliable. The "specific enough" instruction prevents vague sub-questions that return broad Wikipedia pages instead of targeted facts.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <div class="connector-label">sub_questions[]</div>
+    </div>
+
+    <!-- Step 2 Tool -->
+    <div class="step-card tool-step" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div class="step-name">Web Search</div>
+        <div class="step-type-badge">TOOL</div>
+      </div>
+      <div class="step-body">
+        DuckDuckGo query per sub-question. Retrieves current info the LLM cannot produce from training alone.
+        <div class="io-row">
+          <div class="io-chip in">← sub_questions[]</div>
+          <div class="io-chip out">→ search_results{}</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">Tool Call</div>
+          <div class="prompt-box">from ddgs import DDGS
+ddgs = DDGS()
+for q in state["sub_questions"]:
+    hits = list(ddgs.text(q, max_results=4))
+    results_by_question[q] = [
+        {"title": h["title"],
+         "snippet": h["body"],
+         "url": h["href"]}
+        for h in hits
+    ]</div>
+          <div class="rationale"><strong>Why a tool, not an LLM:</strong> Asking an LLM to invent search results is asking it to hallucinate. DuckDuckGo retrieves real, timestamped snippets. Error handling: if a query returns zero results, an empty list is stored and the chain continues.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <div class="connector-label">search_results{}</div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-card" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-name">Extract Facts</div>
+        <div class="step-type-badge">LLM</div>
+      </div>
+      <div class="step-body">
+        Filters noisy snippets into a clean JSON list of verifiable facts with source URLs.
+        <div class="io-row">
+          <div class="io-chip in">← search_results{}</div>
+          <div class="io-chip out">→ key_facts[]</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">System Prompt (excerpt)</div>
+          <div class="prompt-box">Extract the most important, verifiable facts.
+Remove duplicates and irrelevant material.
+Respond ONLY with JSON:
+{
+  "key_facts": [
+    {
+      "sub_question": "&lt;which sub-question&gt;",
+      "fact": "&lt;one clear statement&gt;",
+      "source_url": "&lt;URL or empty&gt;"
+    }
+  ]
+}
+Include 6–12 key facts total.</div>
+          <div class="rationale"><strong>Why separate from Step 4:</strong> Raw HTML snippets are noisy and redundant. A dedicated extraction step distils signal before synthesis begins. The mandatory <code>source_url</code> field makes every claim traceable.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <div class="connector-label">key_facts[]</div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step-card" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">4</div>
+        <div class="step-name">Synthesise Draft</div>
+        <div class="step-type-badge">LLM</div>
+      </div>
+      <div class="step-body">
+        Writes a structured 400–600 word Markdown draft from the structured facts.
+        <div class="io-row">
+          <div class="io-chip in">← key_facts[]</div>
+          <div class="io-chip out">→ draft: str</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">System Prompt (excerpt)</div>
+          <div class="prompt-box">Write a coherent, well-organised research report draft.
+- 400–600 words
+- Use Markdown headings (## for sections)
+- Cover each sub-question in a dedicated section
+- Cite source URLs inline as [source](url)
+- End with a brief "## Summary" paragraph
+Do NOT add anything beyond the Markdown report.</div>
+          <div class="rationale"><strong>Why:</strong> The word-count range prevents both 180-word sketches and 900-word essays. Mapping each section to a sub-question makes Step 5's critique structurally precise.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <div class="connector-label">draft + key_facts[]</div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step-card" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">5</div>
+        <div class="step-name">Critique</div>
+        <div class="step-type-badge">LLM</div>
+      </div>
+      <div class="step-body">
+        Adversarial peer-review of the draft against the original key facts.
+        <div class="io-row">
+          <div class="io-chip in">← draft + key_facts[]</div>
+          <div class="io-chip out">→ critique{}</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">Critique JSON Schema</div>
+          <div class="prompt-box">{
+  "overall_quality": "brief 1-sentence verdict",
+  "strengths": ["..."],
+  "weaknesses": [
+    {
+      "issue": "description",
+      "suggestion": "concrete fix"
+    }
+  ],
+  "missing_topics": ["..."],
+  "unsupported_claims": ["..."]
+}</div>
+          <div class="rationale"><strong>Why both draft AND key_facts:</strong> The critic cross-references claims against evidence, identifying unsupported statements — not just weak prose. Each weakness requires a <code>suggestion</code> to give Step 6 actionable instructions.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <div class="connector-label">draft + critique{}</div>
+    </div>
+
+    <!-- Step 6 -->
+    <div class="step-card" onclick="toggle(this)">
+      <div class="step-header">
+        <div class="step-num">6</div>
+        <div class="step-name">Revise → Final</div>
+        <div class="step-type-badge">LLM</div>
+      </div>
+      <div class="step-body">
+        Addresses every critique point. Produces 500–700 word publication-ready report with References section.
+        <div class="io-row">
+          <div class="io-chip in">← draft + critique{}</div>
+          <div class="io-chip out">→ final_report.md</div>
+        </div>
+      </div>
+      <div class="expand-panel">
+        <div class="expand-inner">
+          <div class="prompt-label">System Prompt (excerpt)</div>
+          <div class="prompt-box">Address every weakness and missing topic in the critique.
+Remove or qualify any unsupported claims.
+500–700 words. Professional, neutral tone.
+Add "## References" listing all cited URLs.
+Output ONLY the final Markdown report.</div>
+          <div class="rationale"><strong>Why separate from Step 4:</strong> Without a critique, revision is just rewriting. With the structured JSON critique, revision is targeted repair — every <code>weakness.suggestion</code> becomes an explicit fix instruction.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /pipeline -->
+
+  <!-- State flow -->
+  <div class="state-panel">
+    <div class="state-header">
+      <h2>Shared State Object</h2>
+      <span style="margin-left:auto; font-size:12px; color:var(--muted)">state: dict — each step reads from and writes to this</span>
+    </div>
+    <div class="state-body">
+      <div class="state-key written"><div class="dot"></div><span class="key-name">topic</span><span class="key-type">str</span></div>
+      <div class="state-key written"><div class="dot"></div><span class="key-name">sub_questions</span><span class="key-type">list[str]</span></div>
+      <div class="state-key both"><div class="dot"></div><span class="key-name">search_results</span><span class="key-type">dict[str, list]</span></div>
+      <div class="state-key both"><div class="dot"></div><span class="key-name">key_facts</span><span class="key-type">list[dict]</span></div>
+      <div class="state-key both"><div class="dot"></div><span class="key-name">draft</span><span class="key-type">str</span></div>
+      <div class="state-key both"><div class="dot"></div><span class="key-name">critique</span><span class="key-type">dict</span></div>
+      <div class="state-key written"><div class="dot"></div><span class="key-name">final_report</span><span class="key-type">str → .md file</span></div>
+      <div class="state-key read"><div class="dot"></div><span class="key-name">started_at</span><span class="key-type">ISO timestamp</span></div>
+      <div class="state-key read"><div class="dot"></div><span class="key-name">finished_at</span><span class="key-type">ISO timestamp</span></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Written by step</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div> Read by next step</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--tool)"></div> Read + written multiple steps</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--tool); box-shadow: 0 0 0 2px rgba(109,232,180,.3)"></div> Tool step (not LLM)</div>
+  </div>
+
+  <footer>
+    <span>Research Report Generator · LLM Agent Assignment</span>
+    <span>Grok API · DuckDuckGo Tool · Python · No LangChain</span>
+  </footer>
+
+</div>
+
+<script>
+function toggle(card) {
+  const wasExpanded = card.classList.contains('expanded');
+  document.querySelectorAll('.step-card.expanded').forEach(c => c.classList.remove('expanded'));
+  if (!wasExpanded) card.classList.add('expanded');
+}
+</script>
+</body>
+</html>
