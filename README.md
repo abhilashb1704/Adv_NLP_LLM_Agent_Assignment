@@ -28,8 +28,11 @@ to a shared `state` dictionary.
 ## Installation
 
 ```bash
-# 1. Clone / unzip the repo
-cd research_agent
+# 1. Clone the repository
+git clone https://github.com/abhilashb1704/Adv_NLP_LLM_Agent_Assignment.git
+
+# 2. Move into the project directory
+cd Adv_NLP_LLM_Agent_Assignment
 
 # 2. Create a virtual environment (optional but recommended)
 python -m venv .venv
